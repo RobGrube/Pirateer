@@ -29,7 +29,7 @@ class PirateerGame(object):
         self.clock = pygame.time.Clock()
         self.mouse_chit = None
 
-        self.held_piece=[None, None, None]
+        self.release_held()
 
     def _set_contsants(self):
         self.chit_count = 12
@@ -255,6 +255,15 @@ class PirateerGame(object):
         self.mouse_chit = self.mouse_to_grid(d['pos'])
         self.mouse_piece_pos = d['pos']-np.array([25,25])
 
+    def release_held(self):
+        self.held_piece = [None] * 3
+
+    def execute_move(self, die, ship, destination):
+        ship.position_xy=destination
+        self.current_roll.pop(self.current_roll.index(die))
+        self.current_valid_moves = self.get_all_valid_moves()
+
+
 
     def _evt_mouse_click(self, d, evt):
         button = d['button']
@@ -262,21 +271,38 @@ class PirateerGame(object):
         grid_pos = self.mouse_to_grid(d['pos'])
         if grid_pos is None:return
 
-        if down:
-            print(f"Mouse down: {grid_pos}")
-            ships = self._get_active_player().get_ships()
-            selected_ship = None
-            for idx, s in enumerate(ships):
-                if not np.any(s.position_xy-grid_pos):
-                    selected_ship = s
-                    break
-            if selected_ship is not None:
-                self.held_piece = [self.active_player, idx, selected_ship]
-            print(selected_ship)
+        if not down:
+            if self.held_piece[0] is not None:
+                #test for valid move
+                x = 561
+                grid_pos_array = np.array(grid_pos)
+                ship = self.held_piece[2]
+                pos_key = tuple(ship.position_xy)
+                if pos_key in self.current_valid_moves:
+                    d = self.current_valid_moves[pos_key]
+                    for die_k in d:
+                        for dest in d[die_k]:
+                            if not np.any(grid_pos_array-dest[0]):
+                                #found it!
+                                x = 561
+                                print("Valid Move detected")
+                                self.execute_move(die_k, ship, grid_pos_array)
+                self.release_held()
+            else:
+                #print(f"Mouse up: {grid_pos}")
+                ships = self._get_active_player().get_ships()
+                selected_ship = None
+                for idx, s in enumerate(ships):
+                    if not np.any(s.position_xy-grid_pos):
+                        selected_ship = s
+                        break
+                if selected_ship is not None:
+                    self.held_piece = [self.active_player, idx, selected_ship]
+                print(selected_ship)
 
         else:
-            self.held_piece = [None, None, None]
-            print(f"Mouse up: {grid_pos}")
+            #self.held_piece = self.release_held()
+            #print(f"Mouse up: {grid_pos}")
             #check if we moved something
             pass
 
