@@ -3,9 +3,6 @@ import sys, os
 from pathlib import Path
 import numpy as np
 
-WINDOW_WIDTH = 640
-WINDOW_HEIGHT  =480
-
 WINDOW_WIDTH = 1920
 WINDOW_HEIGHT  =1440
 
@@ -26,13 +23,13 @@ class PirateerGame(object):
         self.alive = [True, True, True, True]
         self.color_key = {0:'r', 1:'p',2:'k',3:'g'}
 
-
-
         pygame.init()
         self.load_sounds()
         self.window = pygame.display.set_mode(((WINDOW_WIDTH, WINDOW_HEIGHT)))
         self.clock = pygame.time.Clock()
         self.mouse_chit = None
+
+        self.held_piece=[None, None, None]
 
     def _set_contsants(self):
         self.chit_count = 12
@@ -51,7 +48,7 @@ class PirateerGame(object):
     def advance_turn(self):
         #advance player
         self.active_player += 1
-        self.active_player = 2
+        #self.active_player = 0
         if self.active_player>= len(self.alive):
             self.active_player = 0
 
@@ -61,9 +58,12 @@ class PirateerGame(object):
                                                      np.random.randint(1, 7)]]
         self.current_valid_moves=self.get_all_valid_moves()
 
+    def _get_active_player(self):
+        return self.players[self.active_player]
+
     def get_all_valid_moves(self):
         ship_locs = self.get_all_ship_locations()
-        player=self.players[self.active_player]
+        player=self._get_active_player()
         valid_moves = {}
         dice=self.current_roll #purely for pycharm debugger visibility
         for s in player.get_ships():
@@ -72,7 +72,7 @@ class PirateerGame(object):
             starts_on_tradewind = self.pos_is_tradewind(s.position_xy)
             if starts_on_tradewind:
                 directions += self.tradewind_directions.copy()
-                starts_on_tradewind=True# NE, SW
+
             for step_d in directions:  # test each direction
                 for die in self.current_roll:
                     dist = int(die[1:])
@@ -83,7 +83,7 @@ class PirateerGame(object):
 
 
                         #test map validity
-                        if np.max(spot) >= 20 or np.max(spot) < 0 or not self.valid[spot[0],spot[1]]: #map spot invalid
+                        if np.max(spot) >= 20 or np.min(spot) < 0 or not self.valid[spot[0],spot[1]]: #map spot invalid
                             can_move=False
                             break
                         #test tradewind crossing
@@ -157,6 +157,17 @@ class PirateerGame(object):
             'spot_pink':highlight_image_p,
             'spot_green': highlight_image_g
           }
+        d_add ={}
+
+        #add_faded images
+        for k in self.images:
+            if k.startswith('chit'):
+                im_copy = self.images[k].copy()
+                im_copy.set_alpha(128)
+                d_add[f'{k}_fade'] = im_copy
+        self.images = {**self.images, **d_add}
+
+
         for k in [f'die_r{i+1}' for i in range(6)]:
             self.images[k] = pygame.image.load(f'{BASE_PATH}/images/{k}.png')
         for k in [f'die_k{i+1}' for i in range(6)]:
@@ -204,8 +215,8 @@ class PirateerGame(object):
         valid[18, 7] = False
         valid[17:19, 8] = False
         valid[9:11, 9] = False
+        valid[17:19, 9] = False
         valid[9:11, 10] = False
-
         valid[17:19, 10] = False
         valid[18:, 11] = False
         valid[17:, 12] = False
@@ -223,23 +234,53 @@ class PirateerGame(object):
         return valid
 
     def initialize_players(self):
-        self.players=[Player(0, self.images['chit_a1']),
-                      Player(1, self.images['chit_b1']),
-                      Player(2, self.images['chit_c1']),
-                      Player(3, self.images['chit_d1'])]
+        self.players=[Player(0, self.images['chit_a1'], self.images['chit_a1_fade']),
+                      Player(1, self.images['chit_b1'], self.images['chit_b1_fade']),
+                      Player(2, self.images['chit_c1'], self.images['chit_c1_fade']),
+                      Player(3, self.images['chit_d1'], self.images['chit_d1_fade'])]
 
 
+    def mouse_to_grid(self, pos):
+        # offset accounts for center of chit image and teh 3d perspective offset
+        offset = -1 * self.chit_dimensions / 2 - PirateerGame.DY * .18
+        x, y = pos + offset
+        g_pt = (self.map_2 @ np.array([x, y, 1]))[:2]
+        g_pt = np.round(g_pt).astype(int)
+        if np.min(g_pt) > -.5 and np.max(g_pt) < 19.5:
+            return g_pt
+        else:
+            return None
 
     def _evt_mouse_move(self, d):
-        #offset accounts for center of chit image and teh 3d perspective offset
-        offset = -1*self.chit_dimensions/2-PirateerGame.DY*.18
-        x,y=d['pos']+offset
-        g_pt = (self.map_2 @ np.array([x, y, 1]))[:2]
-        g_pt= np.round(g_pt)
-        if np.min(g_pt)>-.5 and np.max(g_pt)<19.5:
-            self.mouse_chit = g_pt
+        self.mouse_chit = self.mouse_to_grid(d['pos'])
+        self.mouse_piece_pos = d['pos']-np.array([25,25])
+
+
+    def _evt_mouse_click(self, d, evt):
+        button = d['button']
+        down = evt.type == pygame.MOUSEBUTTONDOWN
+        grid_pos = self.mouse_to_grid(d['pos'])
+        if grid_pos is None:return
+
+        if down:
+            print(f"Mouse down: {grid_pos}")
+            ships = self._get_active_player().get_ships()
+            selected_ship = None
+            for idx, s in enumerate(ships):
+                if not np.any(s.position_xy-grid_pos):
+                    selected_ship = s
+                    break
+            if selected_ship is not None:
+                self.held_piece = [self.active_player, idx, selected_ship]
+            print(selected_ship)
+
         else:
-            self.mouse_chit = None
+            self.held_piece = [None, None, None]
+            print(f"Mouse up: {grid_pos}")
+            #check if we moved something
+            pass
+
+
     def die_coords(self,player):
         if player ==0:
             return 40, 100, 150, 30
@@ -259,7 +300,10 @@ class PirateerGame(object):
 
             for player in self.players:
                 for ship in player.get_ships():
-                    self.window.blit(ship.image, g_map(*ship.position_xy))
+                    if self.held_piece[2] == ship:
+                        self.window.blit(ship.image_fade, g_map(*ship.position_xy))
+                    else:
+                        self.window.blit(ship.image, g_map(*ship.position_xy))
             #draw dice
             x1,y1,x2,y2 = self.die_coords(self.active_player)
             if len(self.current_roll) > 0:
@@ -284,6 +328,8 @@ class PirateerGame(object):
 
                 elif event.type == pygame.MOUSEMOTION:
                     self._evt_mouse_move(event.dict)
+                elif event.type in [pygame.MOUSEBUTTONUP, pygame.MOUSEBUTTONDOWN]:
+                    self._evt_mouse_click(event.dict, event)
                 else:
                     #print(event)
 
@@ -302,6 +348,11 @@ class PirateerGame(object):
                 for die in self.current_valid_moves[p_tup]:
                     for move in self.current_valid_moves[p_tup][die]:
                         self.window.blit(self.images['spot_green'], self._spot_map(move[0][0],move[0][1]))
+
+            #draw held piece
+            if self.held_piece[0] is not None:
+                self.window.blit(self.held_piece[2].image, self.mouse_piece_pos)
+
             pygame.display.update()
             self.clock.tick(FRAMES_PER_SECOND)
 
@@ -321,7 +372,7 @@ class PirateerGame(object):
             print(event.key)
 
 class Player(object):
-    def __init__(self, position = 0, image=None):
+    def __init__(self, position = 0, image=None, image_fade = None):
         self.position = position
         if position == 0:
             self.ships = [Ship(0,9),Ship(0,10),Ship(0,11)]
@@ -333,7 +384,7 @@ class Player(object):
         elif position == 3:
             self.ships = [Ship(9, 0), Ship(10, 0), Ship(11, 0)]
         for s in self.ships:
-            s.set_image(image)
+            s.set_images(image, image_fade)
 
     def get_ships(self):
         return self.ships
@@ -343,7 +394,8 @@ class Ship(object):
         self.position_xy = np.array([x,y])
         self.image = None
 
-    def set_image(self, image):
+    def set_images(self, image, image_fade):
         self.image= image
+        self.image_fade = image_fade
 
 x =PirateerGame().game_loop()

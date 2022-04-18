@@ -61,9 +61,12 @@ class PirateerGame(object):
                                                      np.random.randint(1, 7)]]
         self.current_valid_moves=self.get_all_valid_moves()
 
+    def _get_active_player(self):
+        return self.players[self.active_player]
+
     def get_all_valid_moves(self):
         ship_locs = self.get_all_ship_locations()
-        player=self.players[self.active_player]
+        player=self._get_active_player()
         valid_moves = {}
         dice=self.current_roll #purely for pycharm debugger visibility
         for s in player.get_ships():
@@ -223,10 +226,10 @@ class PirateerGame(object):
         return valid
 
     def initialize_players(self):
-        self.players=[Player(0, self.images['chit_a1']),
-                      Player(1, self.images['chit_b1']),
-                      Player(2, self.images['chit_c1']),
-                      Player(3, self.images['chit_d1'])]
+        self.players=[Player(0, self.images['chit_a1'], self.images['chit_a1_fade']),
+                      Player(1, self.images['chit_b1'], self.images['chit_b1_fade']),
+                      Player(2, self.images['chit_c1'], self.images['chit_c1_fade']),
+                      Player(3, self.images['chit_d1'], self.images['chit_d1_fade'])]
 
 
 
